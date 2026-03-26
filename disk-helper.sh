@@ -387,6 +387,59 @@ find_large_files() {
     done <<< "$files"
 }
 
+DOWNLOADS_DIR="${DOWNLOADS_DIR:-$HOME/Downloads}"
+
+clean_old_downloads() {
+    echo ""
+    echo "=== Old Downloads (>${DOWNLOAD_AGE_DAYS} days) ==="
+
+    if [[ ! -d "$DOWNLOADS_DIR" ]]; then
+        echo "  Downloads directory not found, skipping"
+        return
+    fi
+
+    local files
+    files="$(find "$DOWNLOADS_DIR" -maxdepth 1 -type f -mtime +"${DOWNLOAD_AGE_DAYS}" 2>/dev/null || true)"
+
+    if [[ -z "$files" ]]; then
+        echo "  No old files found in Downloads"
+        return
+    fi
+
+    local total_size=0
+    local file_count=0
+    while IFS= read -r file; do
+        [[ -n "$file" ]] || continue
+        local size
+        size="$(stat -f%z "$file" 2>/dev/null || echo 0)"
+        total_size=$(( total_size + size ))
+        file_count=$(( file_count + 1 ))
+    done <<< "$files"
+
+    echo "  Found $file_count files older than ${DOWNLOAD_AGE_DAYS} days ($(format_size $total_size) total)"
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        echo "  [dry-run] Would remove $file_count files"
+        while IFS= read -r file; do
+            [[ -n "$file" ]] || continue
+            echo "    $(basename "$file")"
+        done <<< "$files"
+        return
+    fi
+
+    if confirm "  Remove $file_count old files from Downloads?"; then
+        while IFS= read -r file; do
+            [[ -n "$file" ]] || continue
+            rm -f "$file"
+        done <<< "$files"
+        TOTAL_FREED=$(( TOTAL_FREED + total_size ))
+        log_action "Cleaned old downloads" "$(format_size $total_size)"
+        echo "  Freed: $(format_size $total_size)"
+    else
+        echo "  Skipped old downloads cleanup"
+    fi
+}
+
 DUPLICATE_SCAN_DIRS="${DUPLICATE_SCAN_DIRS:-$HOME/Downloads:$HOME/Documents:$HOME/Desktop}"
 
 find_duplicates() {
