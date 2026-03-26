@@ -166,6 +166,88 @@ clean_system_caches() {
     fi
 }
 
+clean_homebrew() {
+    echo ""
+    echo "=== Homebrew ==="
+    if ! tool_installed brew; then
+        echo "  Homebrew: not installed, skipping"
+        return
+    fi
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        echo "  [dry-run] Would run: brew cleanup --prune=all"
+        brew cleanup --dry-run 2>/dev/null | tail -5 || true
+        return
+    fi
+
+    if confirm "  Run brew cleanup --prune=all?"; then
+        local output
+        output="$(brew cleanup --prune=all 2>&1)" || true
+        log_action "Ran brew cleanup" "see log"
+        echo "  Homebrew cleanup complete"
+        echo "$output" | tail -3
+    else
+        echo "  Skipped Homebrew cleanup"
+    fi
+}
+
+clean_npm() {
+    echo ""
+    echo "=== npm ==="
+    if ! tool_installed npm; then
+        echo "  npm: not installed, skipping"
+        return
+    fi
+
+    local cache_dir
+    cache_dir="$(npm config get cache 2>/dev/null || echo "")"
+    local size=0
+    if [[ -n "$cache_dir" ]] && [[ -d "$cache_dir" ]]; then
+        size="$(dir_size "$cache_dir")"
+    fi
+
+    echo "  npm cache: $(format_size $size)"
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        echo "  [dry-run] Would run: npm cache clean --force"
+        return
+    fi
+
+    if [[ "$size" -gt 0 ]] && confirm "  Clean npm cache?"; then
+        npm cache clean --force 2>/dev/null || true
+        TOTAL_FREED=$(( TOTAL_FREED + size ))
+        log_action "Cleaned npm cache" "$(format_size $size)"
+        echo "  Freed: $(format_size $size)"
+    else
+        echo "  Skipped npm cache"
+    fi
+}
+
+clean_pip() {
+    echo ""
+    echo "=== pip ==="
+    if ! tool_installed pip3 && ! tool_installed pip; then
+        echo "  pip: not installed, skipping"
+        return
+    fi
+
+    local pip_cmd="pip3"
+    tool_installed pip3 || pip_cmd="pip"
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        echo "  [dry-run] Would run: $pip_cmd cache purge"
+        return
+    fi
+
+    if confirm "  Purge pip cache?"; then
+        $pip_cmd cache purge 2>/dev/null || true
+        log_action "Purged pip cache" "see log"
+        echo "  pip cache purged"
+    else
+        echo "  Skipped pip cache"
+    fi
+}
+
 main() {
     parse_args "$@"
     trap cleanup_trap INT
