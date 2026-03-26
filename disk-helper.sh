@@ -45,6 +45,51 @@ parse_args() {
     done
 }
 
+LOG_FILE="/tmp/disk-helper-$(date +%Y-%m-%d).log"
+TOTAL_FREED=0
+
+format_size() {
+    local bytes=$1
+    if (( bytes >= 1073741824 )); then
+        printf "%.1f GB" "$(echo "scale=1; $bytes / 1073741824" | bc)"
+    elif (( bytes >= 1048576 )); then
+        printf "%.1f MB" "$(echo "scale=1; $bytes / 1048576" | bc)"
+    elif (( bytes >= 1024 )); then
+        printf "%.1f KB" "$(echo "scale=1; $bytes / 1024" | bc)"
+    else
+        printf "%d B" "$bytes"
+    fi
+}
+
+dir_size() {
+    local path="$1"
+    if [[ -d "$path" ]]; then
+        du -sk "$path" 2>/dev/null | awk '{print $1 * 1024}'
+    else
+        echo 0
+    fi
+}
+
+tool_installed() {
+    command -v "$1" &>/dev/null
+}
+
+log_action() {
+    local action="$1"
+    local size="$2"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $action — freed $size" >> "$LOG_FILE"
+}
+
+confirm() {
+    local prompt="$1"
+    if [[ "$FORCE_MODE" == "true" ]]; then
+        return 0
+    fi
+    printf "%s [y/N] " "$prompt"
+    read -r response
+    [[ "$response" =~ ^[Yy]$ ]]
+}
+
 main() {
     parse_args "$@"
     echo "disk-helper v${VERSION}"
