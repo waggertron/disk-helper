@@ -50,6 +50,9 @@ TOTAL_FREED=0
 
 # Default paths (can be overridden in tests)
 USER_CACHE_DIR="${USER_CACHE_DIR:-$HOME/Library/Caches}"
+XCODE_DERIVED_DATA="${XCODE_DERIVED_DATA:-$HOME/Library/Developer/Xcode/DerivedData}"
+XCODE_ARCHIVES="${XCODE_ARCHIVES:-$HOME/Library/Developer/Xcode/Archives}"
+XCODE_DEVICE_SUPPORT="${XCODE_DEVICE_SUPPORT:-$HOME/Library/Developer/Xcode/iOS DeviceSupport}"
 
 format_size() {
     local bytes=$1
@@ -245,6 +248,64 @@ clean_pip() {
         echo "  pip cache purged"
     else
         echo "  Skipped pip cache"
+    fi
+}
+
+clean_xcode() {
+    echo ""
+    echo "=== Xcode ==="
+    if ! tool_installed xcodebuild; then
+        echo "  Xcode: not installed, skipping"
+        return
+    fi
+
+    local total_freed=0
+
+    # Derived Data
+    local dd_size
+    dd_size="$(dir_size "$XCODE_DERIVED_DATA")"
+    if [[ "$dd_size" -gt 0 ]]; then
+        echo "  DerivedData: $(format_size $dd_size)"
+        if [[ "$DRY_RUN" == "true" ]]; then
+            echo "  [dry-run] Would clean DerivedData"
+        elif confirm "  Clean DerivedData?"; then
+            rm -rf "${XCODE_DERIVED_DATA:?}"/*
+            total_freed=$(( total_freed + dd_size ))
+            echo "  Freed: $(format_size $dd_size)"
+        fi
+    fi
+
+    # Archives
+    local arch_size
+    arch_size="$(dir_size "$XCODE_ARCHIVES")"
+    if [[ "$arch_size" -gt 0 ]]; then
+        echo "  Archives: $(format_size $arch_size)"
+        if [[ "$DRY_RUN" == "true" ]]; then
+            echo "  [dry-run] Would clean Archives"
+        elif confirm "  Clean Archives?"; then
+            rm -rf "${XCODE_ARCHIVES:?}"/*
+            total_freed=$(( total_freed + arch_size ))
+            echo "  Freed: $(format_size $arch_size)"
+        fi
+    fi
+
+    # Device Support
+    local ds_size
+    ds_size="$(dir_size "$XCODE_DEVICE_SUPPORT")"
+    if [[ "$ds_size" -gt 0 ]]; then
+        echo "  Device Support: $(format_size $ds_size)"
+        if [[ "$DRY_RUN" == "true" ]]; then
+            echo "  [dry-run] Would clean Device Support"
+        elif confirm "  Clean Device Support files?"; then
+            rm -rf "${XCODE_DEVICE_SUPPORT:?}"/*
+            total_freed=$(( total_freed + ds_size ))
+            echo "  Freed: $(format_size $ds_size)"
+        fi
+    fi
+
+    if [[ "$total_freed" -gt 0 ]]; then
+        TOTAL_FREED=$(( TOTAL_FREED + total_freed ))
+        log_action "Cleaned Xcode" "$(format_size $total_freed)"
     fi
 }
 
