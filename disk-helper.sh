@@ -309,6 +309,37 @@ clean_xcode() {
     fi
 }
 
+clean_docker() {
+    echo ""
+    echo "=== Docker ==="
+    if ! tool_installed docker; then
+        echo "  Docker: not installed, skipping"
+        return
+    fi
+
+    # Check if Docker daemon is running
+    if ! docker info &>/dev/null; then
+        echo "  Docker: daemon not running, skipping"
+        return
+    fi
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        echo "  [dry-run] Would run: docker system prune -f"
+        docker system df 2>/dev/null || true
+        return
+    fi
+
+    if confirm "  Run docker system prune (removes dangling images, stopped containers, unused networks)?"; then
+        local output
+        output="$(docker system prune -f 2>&1)" || true
+        echo "$output" | tail -3
+        log_action "Ran docker system prune" "see log"
+        echo "  Docker cleanup complete"
+    else
+        echo "  Skipped Docker cleanup"
+    fi
+}
+
 main() {
     parse_args "$@"
     trap cleanup_trap INT
