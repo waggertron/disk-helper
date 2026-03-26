@@ -387,6 +387,99 @@ find_large_files() {
     done <<< "$files"
 }
 
+DUPLICATE_SCAN_DIRS="${DUPLICATE_SCAN_DIRS:-$HOME/Downloads:$HOME/Documents:$HOME/Desktop}"
+
+find_duplicates() {
+    echo ""
+    echo "=== Duplicate Files ==="
+
+    # Split scan dirs by colon
+    local IFS=':'
+    local dirs=()
+    read -ra dirs <<< "$DUPLICATE_SCAN_DIRS"
+    unset IFS
+
+    local tmp_sizes
+    tmp_sizes="$(mktemp)"
+    local tmp_hashes
+    tmp_hashes="$(mktemp)"
+    trap "rm -f '$tmp_sizes' '$tmp_hashes'" RETURN
+
+    # Pass 1: collect file sizes
+    for dir in "${dirs[@]}"; do
+        [[ -d "$dir" ]] || continue
+        while IFS= read -r file; do
+            local size
+            size="$(stat -f%z "$file" 2>/dev/null || echo 0)"
+            [[ "$size" -gt 0 ]] || continue
+            echo "$size $file" >> "$tmp_sizes"
+        done < <(find "$dir" -type f -maxdepth 3 2>/dev/null)
+    done
+
+    if [[ ! -s "$tmp_sizes" ]]; then
+        echo "  No duplicates found"
+        return
+    fi
+
+    # Find sizes that appear more than once
+    local dup_sizes
+    dup_sizes="$(awk '{print $1}' "$tmp_sizes" | sort | uniq -d)"
+
+    if [[ -z "$dup_sizes" ]]; then
+        echo "  No duplicates found"
+        return
+    fi
+
+    # Pass 2: for same-size files, compute checksums
+    while IFS= read -r size; do
+        [[ -n "$size" ]] || continue
+        while IFS= read -r line; do
+            local file="${line#* }"
+            local hash
+            hash="$(md5 -q "$file" 2>/dev/null || true)"
+            [[ -n "$hash" ]] || continue
+            echo "$hash $size $file" >> "$tmp_hashes"
+        done < <(grep "^${size} " "$tmp_sizes")
+    done <<< "$dup_sizes"
+
+    # Find duplicate hashes
+    local found_dupes=false
+    local dup_hashes
+    dup_hashes="$(awk '{print $1}' "$tmp_hashes" | sort | uniq -d)"
+
+    if [[ -z "$dup_hashes" ]]; then
+        echo "  No duplicates found"
+        return
+    fi
+
+    while IFS= read -r hash; do
+        [[ -n "$hash" ]] || continue
+        found_dupes=true
+        local size
+        size="$(grep "^${hash} " "$tmp_hashes" | head -1 | awk '{print $2}')"
+        echo "  Duplicate group ($(format_size "$size") each):"
+        while IFS= read -r line; do
+            local f="${line#* }"
+            f="${f#* }"
+            echo "    $f"
+        done < <(grep "^${hash} " "$tmp_hashes")
+        echo ""
+    done <<< "$dup_hashes"
+
+    if [[ "$found_dupes" == "false" ]]; then
+        echo "  No duplicates found"
+        return
+    fi
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        echo "  [dry-run] Review only — no deletions"
+        return
+    fi
+
+    echo "  NOTE: Duplicate removal requires individual confirmation (even in --force mode)."
+    echo "  Re-run with specific file paths to delete manually if desired."
+}
+
 main() {
     parse_args "$@"
     trap cleanup_trap INT
