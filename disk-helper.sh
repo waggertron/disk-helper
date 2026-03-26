@@ -49,6 +49,8 @@ LOG_FILE="/tmp/disk-helper-$(date +%Y-%m-%d).log"
 TOTAL_FREED=0
 
 # Default paths (can be overridden in tests)
+LARGE_FILE_SCAN_DIR="${LARGE_FILE_SCAN_DIR:-$HOME}"
+LARGE_FILE_MIN_SIZE_KB="${LARGE_FILE_MIN_SIZE_KB:-524288}"  # 500MB in KB
 USER_CACHE_DIR="${USER_CACHE_DIR:-$HOME/Library/Caches}"
 XCODE_DERIVED_DATA="${XCODE_DERIVED_DATA:-$HOME/Library/Developer/Xcode/DerivedData}"
 XCODE_ARCHIVES="${XCODE_ARCHIVES:-$HOME/Library/Developer/Xcode/Archives}"
@@ -338,6 +340,51 @@ clean_docker() {
     else
         echo "  Skipped Docker cleanup"
     fi
+}
+
+find_large_files() {
+    echo ""
+    echo "=== Large Files (>$(format_size $(( LARGE_FILE_MIN_SIZE_KB * 1024 )))) ==="
+
+    local files
+    files="$(find "$LARGE_FILE_SCAN_DIR" -type f -size +"${LARGE_FILE_MIN_SIZE_KB}k" \
+        -not -path "*/Library/*" \
+        -not -path "*/.Trash/*" \
+        -not -path "*/.*" \
+        2>/dev/null | head -20 || true)"
+
+    if [[ -z "$files" ]]; then
+        echo "  No files found above threshold"
+        return
+    fi
+
+    echo "  Found large files:"
+    while IFS= read -r file; do
+        local size
+        size="$(stat -f%z "$file" 2>/dev/null || echo 0)"
+        printf "  %-60s %s\n" "$file" "$(format_size "$size")"
+    done <<< "$files"
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        echo "  [dry-run] Review only — no deletions"
+        return
+    fi
+
+    echo ""
+    echo "  NOTE: Large files require individual confirmation (even in --force mode)."
+    while IFS= read -r file; do
+        local size
+        size="$(stat -f%z "$file" 2>/dev/null || echo 0)"
+        local old_force="$FORCE_MODE"
+        FORCE_MODE="false"
+        if confirm "  Delete $file ($(format_size "$size"))?"; then
+            rm -f "$file"
+            TOTAL_FREED=$(( TOTAL_FREED + size ))
+            log_action "Deleted large file: $file" "$(format_size "$size")"
+            echo "  Deleted."
+        fi
+        FORCE_MODE="$old_force"
+    done <<< "$files"
 }
 
 main() {
