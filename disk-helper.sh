@@ -567,9 +567,23 @@ find_duplicates() {
 main() {
     parse_args "$@"
     trap cleanup_trap INT
+
     echo "disk-helper v${VERSION}"
+    [[ "$DRY_RUN" == "true" ]] && echo "[DRY RUN MODE]"
+
     show_disk_usage
-    # cleanup categories will go here
+
+    clean_system_caches
+    clean_homebrew
+    clean_npm
+    clean_pip
+    clean_xcode
+    clean_docker
+    find_large_files
+    find_duplicates
+    clean_old_downloads
+    clean_trash
+
     show_summary
 }
 
