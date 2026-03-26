@@ -440,6 +440,37 @@ clean_old_downloads() {
     fi
 }
 
+TRASH_DIR="${TRASH_DIR:-$HOME/.Trash}"
+
+clean_trash() {
+    echo ""
+    echo "=== Trash ==="
+
+    local size
+    size="$(dir_size "$TRASH_DIR")"
+
+    if [[ "$size" -eq 0 ]]; then
+        echo "  Trash is empty"
+        return
+    fi
+
+    echo "  Trash: $(format_size $size)"
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        echo "  [dry-run] Would empty Trash"
+        return
+    fi
+
+    if confirm "  Empty Trash?"; then
+        rm -rf "${TRASH_DIR:?}"/* 2>/dev/null || true
+        TOTAL_FREED=$(( TOTAL_FREED + size ))
+        log_action "Emptied Trash" "$(format_size $size)"
+        echo "  Freed: $(format_size $size)"
+    else
+        echo "  Skipped Trash"
+    fi
+}
+
 DUPLICATE_SCAN_DIRS="${DUPLICATE_SCAN_DIRS:-$HOME/Downloads:$HOME/Documents:$HOME/Desktop}"
 
 find_duplicates() {
