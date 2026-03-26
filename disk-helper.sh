@@ -72,7 +72,9 @@ format_size() {
 dir_size() {
     local path="$1"
     if [[ -d "$path" ]]; then
-        du -sk "$path" 2>/dev/null | awk '{print $1 * 1024}'
+        local result
+        result="$(du -sk "$path" 2>/dev/null | tail -1 | awk '{print $1 * 1024}')" || true
+        echo "${result:-0}"
     else
         echo 0
     fi
@@ -346,12 +348,22 @@ find_large_files() {
     echo ""
     echo "=== Large Files (>$(format_size $(( LARGE_FILE_MIN_SIZE_KB * 1024 )))) ==="
 
-    local files
-    files="$(find "$LARGE_FILE_SCAN_DIR" -type f -size +"${LARGE_FILE_MIN_SIZE_KB}k" \
-        -not -path "*/Library/*" \
-        -not -path "*/.Trash/*" \
-        -not -path "*/.*" \
-        2>/dev/null | head -20 || true)"
+    # Scan common directories (not entire $HOME — too slow)
+    local default_home="$HOME"
+    local scan_dirs
+    if [[ "$LARGE_FILE_SCAN_DIR" != "$default_home" ]]; then
+        # Custom scan dir (e.g., tests) — scan it directly
+        scan_dirs=("$LARGE_FILE_SCAN_DIR")
+    else
+        scan_dirs=("$LARGE_FILE_SCAN_DIR/Downloads" "$LARGE_FILE_SCAN_DIR/Documents" "$LARGE_FILE_SCAN_DIR/Desktop" "$LARGE_FILE_SCAN_DIR/Movies" "$LARGE_FILE_SCAN_DIR/Music" "$LARGE_FILE_SCAN_DIR/Pictures")
+    fi
+    local files=""
+    for scan_dir in "${scan_dirs[@]}"; do
+        [[ -d "$scan_dir" ]] || continue
+        local found
+        found="$(find "$scan_dir" -maxdepth 5 -type f -size +"${LARGE_FILE_MIN_SIZE_KB}k" 2>/dev/null | head -20 || true)"
+        [[ -n "$found" ]] && files="${files}${files:+$'\n'}${found}"
+    done
 
     if [[ -z "$files" ]]; then
         echo "  No files found above threshold"
