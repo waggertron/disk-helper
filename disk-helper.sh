@@ -48,6 +48,9 @@ parse_args() {
 LOG_FILE="/tmp/disk-helper-$(date +%Y-%m-%d).log"
 TOTAL_FREED=0
 
+# Default paths (can be overridden in tests)
+USER_CACHE_DIR="${USER_CACHE_DIR:-$HOME/Library/Caches}"
+
 format_size() {
     local bytes=$1
     if (( bytes >= 1073741824 )); then
@@ -110,6 +113,57 @@ cleanup_trap() {
     echo "Interrupted! Showing partial results..."
     show_summary
     exit 130
+}
+
+clean_user_caches() {
+    local size_before
+    size_before="$(dir_size "$USER_CACHE_DIR")"
+
+    if [[ "$size_before" -eq 0 ]]; then
+        echo "  User caches: nothing to clean"
+        return
+    fi
+
+    echo "  User caches: $(format_size "$size_before")"
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        echo "  [dry-run] Would clean user caches"
+        return
+    fi
+
+    if confirm "  Clean user caches?"; then
+        rm -rf "${USER_CACHE_DIR:?}"/*
+        local size_after
+        size_after="$(dir_size "$USER_CACHE_DIR")"
+        local freed=$(( size_before - size_after ))
+        TOTAL_FREED=$(( TOTAL_FREED + freed ))
+        log_action "Cleaned user caches" "$(format_size $freed)"
+        echo "  Freed: $(format_size $freed)"
+    else
+        echo "  Skipped user caches"
+    fi
+}
+
+clean_system_caches() {
+    echo ""
+    echo "=== System Caches ==="
+    clean_user_caches
+    # System-level caches (/Library/Caches) require sudo — only attempt if not dry-run
+    if [[ "$DRY_RUN" != "true" ]] && [[ -d "/Library/Caches" ]]; then
+        local size
+        size="$(sudo du -sk /Library/Caches 2>/dev/null | awk '{print $1 * 1024}' || echo 0)"
+        if [[ "$size" -gt 0 ]]; then
+            echo "  System caches: $(format_size "$size")"
+            if confirm "  Clean system caches? (requires sudo)"; then
+                sudo rm -rf /Library/Caches/* 2>/dev/null || true
+                log_action "Cleaned system caches" "$(format_size "$size")"
+                TOTAL_FREED=$(( TOTAL_FREED + size ))
+                echo "  Freed: $(format_size "$size")"
+            else
+                echo "  Skipped system caches"
+            fi
+        fi
+    fi
 }
 
 main() {
