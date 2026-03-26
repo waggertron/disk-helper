@@ -90,9 +90,35 @@ confirm() {
     [[ "$response" =~ ^[Yy]$ ]]
 }
 
+show_disk_usage() {
+    echo ""
+    echo "=== Disk Usage ==="
+    df -h / | tail -1 | awk '{printf "  Filesystem: %s  Total: %s  Used: %s  Free: %s  (%s used)\n", $1, $2, $3, $4, $5}'
+    echo ""
+}
+
+show_summary() {
+    echo ""
+    echo "=== Summary ==="
+    echo "  Total space freed: $(format_size $TOTAL_FREED)"
+    echo "  Log saved to: $LOG_FILE"
+    echo ""
+}
+
+cleanup_trap() {
+    echo ""
+    echo "Interrupted! Showing partial results..."
+    show_summary
+    exit 130
+}
+
 main() {
     parse_args "$@"
+    trap cleanup_trap INT
     echo "disk-helper v${VERSION}"
+    show_disk_usage
+    # cleanup categories will go here
+    show_summary
 }
 
 # Guard: only run main if not being sourced
